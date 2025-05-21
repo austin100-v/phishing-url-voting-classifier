@@ -3,7 +3,6 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from pyzbar.pyzbar import decode
 import cv2
 from PIL import Image
 import io
@@ -103,12 +102,9 @@ def predict_url(url_features):
 
 # Function to handle QR code scanning from image
 def scan_qr_code(image):
-    qr_codes = decode(image)
-    urls = []
-    for qr in qr_codes:
-        qr_data = qr.data.decode('utf-8')
-        urls.append(qr_data)
-    return urls
+    detector = cv2.QRCodeDetector()
+    data, points, _ = detector.detectAndDecode(image)
+    return [data] if data else []
 
 # Set the title and instructions
 st.title("Phishing URL and QR Code Scanner")
@@ -179,29 +175,27 @@ if st.session_state.scan_active:
     scan_results = st.empty()
     qr_preview = st.empty()
 
+    detector = cv2.QRCodeDetector()
+
     while st.session_state.scan_active:
         ret, frame = cap.read()
         if not ret:
             scan_results.warning("Failed to access webcam.")
             break
 
-        decoded_qr_codes = decode(frame)
-        if decoded_qr_codes:
-            for qr in decoded_qr_codes:
-                qr_data = qr.data.decode('utf-8')
+        data, points, _ = detector.detectAndDecode(frame)
+        if data:
+            st.session_state.last_qr_data = data
+            qr_preview.markdown(f"**🔗 Live QR Code Decoded URL:** `{data}`")
 
-                # Show decoded link live
-                st.session_state.last_qr_data = qr_data
-                qr_preview.markdown(f"**🔗 Live QR Code Decoded URL:** `{qr_data}`")
+            url_features = extract_features(data)
+            prediction = predict_url(url_features)
+            if prediction == 1:
+                scan_results.success("✅ This URL is SAFE.")
+            else:
+                scan_results.error("🚨 This URL is PHISHING.")
 
-                # Make prediction
-                url_features = extract_features(qr_data)
-                prediction = predict_url(url_features)
-                if prediction == 1:
-                    scan_results.success("✅ This URL is SAFE.")
-                else:
-                    scan_results.error("🚨 This URL is PHISHING.")
-            st.session_state.scan_active = False  # Auto-stop after success
+            st.session_state.scan_active = False
             break
 
         frame_display.image(frame, channels="BGR", caption="Live QR Feed", use_container_width=True)
