@@ -1,7 +1,6 @@
 streamlit
-joblib
 numpy
-pandas
-Pillow
-pyzbar
+joblib
+pillow
 scikit-learn
+opencv-python
