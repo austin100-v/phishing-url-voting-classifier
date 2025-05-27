@@ -30,10 +30,11 @@ def extract_features(url):
 def is_valid_url(data: str) -> bool:
     try:
         result = urlparse(data)
-        return all([result.scheme in ['http', 'https'], result.netloc])
+        # Accepting common and payment-related schemes
+        return result.scheme in ['http', 'https', 'upi'] and bool(result.netloc or result.path)
     except:
         return False
-
+        
 def predict_url(url_features):
     return model.predict([url_features])[0]
 
