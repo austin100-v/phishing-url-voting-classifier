@@ -1,4 +1,12 @@
-import streamlit as st import joblib import numpy as np import pandas as pd from sklearn.preprocessing import StandardScaler import cv2 from PIL import Image import io import threading
+import streamlit as st 
+import joblib 
+import numpy as np 
+import pandas as pd 
+from sklearn.preprocessing import StandardScaler 
+import cv2 
+from PIL import Image 
+import io 
+import threading
 
 Load the pre-trained model (voting_classifier_model.pkl)
 
