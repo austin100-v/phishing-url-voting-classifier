@@ -8,7 +8,7 @@ from PIL import Image
 import io 
 import threading
 
-Load the pre-trained model (voting_classifier_model.pkl)
+# Load the pre-trained model (voting_classifier_model.pkl)
 
 model = joblib.load('voting_classifier_model.pkl')
 
