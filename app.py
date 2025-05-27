@@ -114,59 +114,71 @@ if qr_code_image:
     else:
         st.error("No QR code detected.")
 
-st.header("Live QR Code Scanner")
+import streamlit.components.v1 as components
 
-if "scan_active" not in st.session_state:
-    st.session_state.scan_active = False
-if "last_qr_data" not in st.session_state:
-    st.session_state.last_qr_data = ""
+st.header("Live QR Code Scanner (Browser-Based)")
 
-if st.button("Start QR Scan"):
-    st.session_state.scan_active = True
-    st.info("Webcam started. Waiting for QR code...")
+qr_html_code = """
+<!DOCTYPE html>
+<html>
+  <body>
+    <div id="reader" width="600px"></div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+      function sendDataToStreamlit(data) {
+        const streamlitEvent = new Event("QRData");
+        streamlitEvent.data = data;
+        window.dispatchEvent(streamlitEvent);
+      }
 
-if st.button("Stop Scan"):
-    st.session_state.scan_active = False
-    st.warning("QR scan stopped.")
+      const html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" }, 
+        {
+          fps: 10,
+          qrbox: 250
+        },
+        (decodedText, decodedResult) => {
+          sendDataToStreamlit(decodedText);
+          html5QrCode.stop(); // Stop scanning once a code is read
+        },
+        (errorMessage) => {
+          // ignore read errors
+        }
+      ).catch(err => {
+        console.error("Camera start failed:", err);
+      });
 
-if st.session_state.scan_active:
-    cap = cv2.VideoCapture(0)
-    frame_display = st.empty()
-    scan_results = st.empty()
-    qr_preview = st.empty()
+      window.addEventListener("QRData", function(e) {
+        const data = e.data;
+        const streamlitInput = window.parent.document.querySelector('iframe').contentWindow;
+        streamlitInput.postMessage({ isStreamlitMessage: true, type: "streamlit:setComponentValue", data: data }, "*");
+      });
+    </script>
+  </body>
+</html>
+"""
 
-    detector = cv2.QRCodeDetector()
+qr_result = components.html(qr_html_code, height=400)
 
-    while st.session_state.scan_active:
-        ret, frame = cap.read()
-        if not ret:
-            scan_results.warning("Failed to access webcam.")
-            break
+# Handle the received QR code data
+qr_data = st.experimental_get_query_params().get("qr_data", [None])[0]
 
-        data, points, _ = detector.detectAndDecode(frame)
-        if data:
-            st.session_state.last_qr_data = data
-            qr_preview.markdown(f"**🔗 Live QR Code Decoded Content:** `{data}`")
-            st.code(data)
-            st.download_button("Copy QR Content", data, file_name="qr_content.txt")
-            if is_valid_url(data):
-                url_features = extract_features(data)
-                prediction = predict_url(url_features)
-                result = "SAFE" if prediction == 1 else "PHISHING"
-                if prediction == 1:
-                    scan_results.success("✅ This URL is SAFE.")
-                else:
-                    scan_results.error("🚨 This URL is PHISHING.")
-                st.session_state.scan_history.append((data, result))
-            else:
-                scan_results.warning("⚠️ This QR code does not contain a valid URL.")
-            st.session_state.scan_active = False
-            break
-
-        frame_display.image(frame, channels="BGR", caption="Live QR Feed", use_container_width=True)
-
-    cap.release()
-    st.success("QR scan complete.")
+if qr_data:
+    st.markdown(f"**Scanned QR Code Content:** `{qr_data}`")
+    st.code(qr_data)
+    st.download_button("Copy QR Content", qr_data, file_name="qr_content.txt")
+    if is_valid_url(qr_data):
+        url_features = extract_features(qr_data)
+        prediction = predict_url(url_features)
+        result = "SAFE" if prediction == 1 else "PHISHING"
+        if prediction == 1:
+            st.success("✅ This URL is SAFE.")
+        else:
+            st.error("🚨 This URL is PHISHING.")
+        st.session_state.scan_history.append((qr_data, result))
+    else:
+        st.warning("⚠️ This QR code does not contain a valid URL.")
 
 if st.session_state.last_qr_data and not st.session_state.scan_active:
     st.markdown(f"**🔍 Last Decoded QR Code Content:** `{st.session_state.last_qr_data}`")
