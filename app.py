@@ -6,37 +6,52 @@ import re
 from PIL import Image
 import cv2
 
-# Load model
+# Load your pre-trained model
 model = joblib.load('voting_classifier_model.pkl')
 
 def extract_features(url):
-    features = [
-        len(url), url.count('.'), url.count('@'), url.count('?'), url.count('-'),
-        url.count('='), url.count('http'), url.count('https'), url.count('www'),
-        sum(c.isdigit() for c in url), sum(c.isalpha() for c in url),
-        urlparse(url).path.count('/'), url.count('//'), url.count('%'),
-        url.count('.com'), url.count('.exe'), url.count('.php')
-    ]
+    features = []
+    features.append(len(url))
+    features.append(url.count('.'))
+    features.append(url.count('@'))
+    features.append(url.count('?'))
+    features.append(url.count('-'))
+    features.append(url.count('='))
+    features.append(url.count('http'))
+    features.append(url.count('https'))
+    features.append(url.count('www'))
+    digits = sum(c.isdigit() for c in url)
+    features.append(digits)
+    letters = sum(c.isalpha() for c in url)
+    features.append(letters)
+    path = urlparse(url).path
+    features.append(path.count('/'))
+    features.append(url.count('//'))
+    features.append(url.count('%'))
+    features.append(url.count('.com'))
+    features.append(url.count('.exe'))
+    features.append(url.count('.php'))
     domain = urlparse(url).netloc
-    features.extend([
-        1 if re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', domain) else 0,
-        len(domain), domain.count('.') - 1,
-        1 if url.startswith("https") else 0,
-        1 if any(domain.endswith(tld) for tld in ['.tk', '.ml', '.ga', '.cf', '.gq']) else 0
-    ])
-    while len(features) < 31:
+    features.append(1 if re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', domain) else 0)
+    features.append(len(domain))
+    features.append(domain.count('.') - 1)
+    features.append(1 if url.startswith("https") else 0)
+    suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq']
+    features.append(1 if any(domain.endswith(tld) for tld in suspicious_tlds) else 0)
+    for _ in range(31 - len(features)):
         features.append(0)
     return features
 
-def is_valid_url(data):
+def is_valid_url(data: str) -> bool:
     try:
         result = urlparse(data)
-        return all([result.scheme in ['http', 'https', 'upi'], result.netloc or result.path])
+        return bool(result.scheme) and bool(result.netloc) or data.startswith("upi://")
     except:
         return False
 
-def predict_url(features):
-    return model.predict([features])[0]
+def predict_url(url_features):
+    prediction = model.predict([url_features])
+    return prediction[0]
 
 def scan_qr_code(image):
     detector = cv2.QRCodeDetector()
@@ -45,7 +60,7 @@ def scan_qr_code(image):
 
 st.title("Phishing URL and QR Code Scanner")
 
-# Manual URL check
+# Manual URL input
 url_input = st.text_input("Enter URL to check:")
 if url_input:
     features = extract_features(url_input)
@@ -55,20 +70,20 @@ if url_input:
     else:
         st.error("🚨 This URL is PHISHING.")
 
-# QR image upload
+# QR code image upload
 st.header("Upload QR Code Image")
-uploaded_img = st.file_uploader("Upload QR code image", type=['png', 'jpg', 'jpeg'])
-if uploaded_img:
-    image = Image.open(uploaded_img).convert('RGB')
+qr_image_file = st.file_uploader("Upload QR code image", type=['png', 'jpg', 'jpeg'])
+if qr_image_file:
+    image = Image.open(qr_image_file).convert('RGB')
     st.image(image, caption="Uploaded QR Code", use_container_width=True)
     image_np = np.array(image)
     image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
-    data = scan_qr_code(image_bgr)
+    qr_data = scan_qr_code(image_bgr)
 
-    if data:
-        st.markdown(f"**Scanned QR Code Content:** `{data}`")
-        if is_valid_url(data):
-            features = extract_features(data)
+    if qr_data:
+        st.markdown(f"**Scanned QR Code Content:** `{qr_data}`")
+        if is_valid_url(qr_data):
+            features = extract_features(qr_data)
             pred = predict_url(features)
             if pred == 1:
                 st.success("✅ This URL is SAFE.")
@@ -79,41 +94,64 @@ if uploaded_img:
     else:
         st.error("No QR code detected in the uploaded image.")
 
-# Live QR scanning
+# Live QR Code Scanner
 st.header("Live QR Code Scanner")
-stop = st.button("Stop Scan")
-st.components.v1.html("""
-<div id=\"reader\" style=\"width:300px;\"></div>
-<script src=\"https://unpkg.com/html5-qrcode\"></script>
-<script>
-    const reader = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-    function sendToStreamlit(text) {
-        const input = window.parent.document.querySelector('input[aria-label="QR Code Data (live)"]');
-        if (input) {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
+
+start_scan = st.button("Start Scan")
+if start_scan:
+    qr_data_live = st.text_input("QR Code Data (hidden)", key="qr_live_data", value="", label_visibility="collapsed")
+
+    if qr_data_live:
+        st.markdown(f"**Scanned QR Code Content (Live):** `{qr_data_live}`")
+        if is_valid_url(qr_data_live):
+            features = extract_features(qr_data_live)
+            pred = predict_url(features)
+            if pred == 1:
+                st.success("✅ This URL is SAFE.")
+            else:
+                st.error("🚨 This URL is PHISHING.")
+        else:
+            st.warning("⚠️ This QR code does not contain a valid URL.")
+
+    # HTML5 QR Scanner
+    st.components.v1.html("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    </head>
+    <body>
+      <div id="reader" style="width: 300px;"></div>
+      <button onclick="stopScan()">Stop Scan</button>
+      <script>
+        let lastResult = null;
+        let scanner;
+
+        function sendToStreamlit(data) {
+          const inputBox = window.parent.document.querySelector('input[aria-label="QR Code Data (hidden)"]');
+          if (inputBox) {
+            inputBox.value = data;
+            inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+          }
         }
-    }
-    let lastResult = null;
-    reader.render((decodedText) => {
-        if (decodedText !== lastResult) {
+
+        function onScanSuccess(decodedText, decodedResult) {
+          if (decodedText !== lastResult) {
             lastResult = decodedText;
             sendToStreamlit(decodedText);
+          }
         }
-    });
-</script>
-""", height=400)
 
-qr_live_data = st.text_input("QR Code Data (live)", value="", label_visibility="collapsed")
-if qr_live_data and not stop:
-    st.markdown(f"**Live QR Code Result:** `{qr_live_data}`")
-    if is_valid_url(qr_live_data):
-        features = extract_features(qr_live_data)
-        pred = predict_url(features)
-        if pred == 1:
-            st.success("✅ This URL is SAFE.")
-        else:
-            st.error("🚨 This URL is PHISHING.")
-    else:
-        st.warning("⚠️ This QR code does not contain a valid URL.")
-        
+        scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        scanner.render(onScanSuccess);
+
+        function stopScan() {
+          scanner.clear().then(() => {
+            document.getElementById("reader").innerHTML = "Scanner stopped.";
+          });
+        }
+      </script>
+    </body>
+    </html>
+    """, height=400)
+    
