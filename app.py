@@ -94,11 +94,21 @@ if qr_image_file:
     else:
         st.error("No QR code detected in the uploaded image.")
 
-# Live QR Code Scanner
-st.header("Live QR Code Scanner")
+# Flags to control scan state
+if 'scanning' not in st.session_state:
+    st.session_state.scanning = False
 
-start_scan = st.button("Start Scan")
-if start_scan:
+# Start and Stop buttons
+col1, col2 = st.columns([1, 1])
+with col1:
+    if st.button("Start Scan"):
+        st.session_state.scanning = True
+with col2:
+    if st.button("Stop Scan"):
+        st.session_state.scanning = False
+
+# Live QR Code Scanner section
+if st.session_state.scanning:
     qr_data_live = st.text_input("QR Code Data (hidden)", key="qr_live_data", value="", label_visibility="collapsed")
 
     if qr_data_live:
@@ -113,45 +123,46 @@ if start_scan:
         else:
             st.warning("⚠️ This QR code does not contain a valid URL.")
 
-    # HTML5 QR Scanner
-    st.components.v1.html("""
+    # Pass scanning state to JS
+    st.components.v1.html(f"""
     <!DOCTYPE html>
     <html>
     <head>
       <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+      <style>
+        #reader {{ margin-bottom: 10px; }}
+      </style>
     </head>
     <body>
       <div id="reader" style="width: 300px;"></div>
-      <button onclick="stopScan()">Stop Scan</button>
       <script>
+        const scanningEnabled = {str(st.session_state.scanning).lower()};
         let lastResult = null;
         let scanner;
 
-        function sendToStreamlit(data) {
+        function sendToStreamlit(data) {{
           const inputBox = window.parent.document.querySelector('input[aria-label="QR Code Data (hidden)"]');
-          if (inputBox) {
+          if (inputBox) {{
             inputBox.value = data;
-            inputBox.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }
+            inputBox.dispatchEvent(new Event('input', {{ bubbles: true }}));
+          }}
+        }}
 
-        function onScanSuccess(decodedText, decodedResult) {
-          if (decodedText !== lastResult) {
+        function onScanSuccess(decodedText, decodedResult) {{
+          if (decodedText !== lastResult) {{
             lastResult = decodedText;
             sendToStreamlit(decodedText);
-          }
-        }
+          }}
+        }}
 
-        scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-        scanner.render(onScanSuccess);
-
-        function stopScan() {
-          scanner.clear().then(() => {
-            document.getElementById("reader").innerHTML = "Scanner stopped.";
-          });
-        }
+        if (scanningEnabled) {{
+          scanner = new Html5QrcodeScanner("reader", {{ fps: 10, qrbox: 250 }});
+          scanner.render(onScanSuccess);
+        }} else {{
+          document.getElementById("reader").innerHTML = "Scanner stopped.";
+        }}
       </script>
     </body>
     </html>
-    """, height=400)
-    
+    """, height=450)
+
