@@ -50,8 +50,10 @@ url_input = st.text_input("Enter URL to check:")
 if url_input:
     features = extract_features(url_input)
     pred = predict_url(features)
-    st.success("This URL is SAFE." if pred == 1 else "This URL is PHISHING.")
-
+    if pred == 1:
+    st.success("✅ This URL is SAFE.")
+else:
+    st.error("🚨 This URL is PHISHING.")
 # QR code image upload
 st.header("Upload QR Code Image")
 qr_image_file = st.file_uploader("Upload QR code image", type=['png', 'jpg', 'jpeg'])
