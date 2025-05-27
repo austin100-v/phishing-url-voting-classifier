@@ -2,189 +2,154 @@ import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-import cv2
 from PIL import Image
-import io
-import threading
+import cv2
+from urllib.parse import urlparse
+import re
+import streamlit.components.v1 as components
 
-# Load the pre-trained model (voting_classifier_model.pkl)
+# Load model
 model = joblib.load('voting_classifier_model.pkl')
 
-import re
-from urllib.parse import urlparse
-
+# Extract features from URL
 def extract_features(url):
-    features = []
-
-    features.append(len(url))
-    features.append(url.count('.'))
-    features.append(url.count('@'))
-    features.append(url.count('?'))
-    features.append(url.count('-'))
-    features.append(url.count('='))
-    features.append(url.count('http'))
-    features.append(url.count('https'))
-    features.append(url.count('www'))
-    digits = sum(c.isdigit() for c in url)
-    features.append(digits)
-    letters = sum(c.isalpha() for c in url)
-    features.append(letters)
-    path = urlparse(url).path
-    features.append(path.count('/'))
-    features.append(url.count('//'))
-    features.append(url.count('%'))
-    features.append(url.count('.com'))
-    features.append(url.count('.exe'))
-    features.append(url.count('.php'))
-    domain = urlparse(url).netloc
-    features.append(1 if re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', domain) else 0)
-    features.append(len(domain))
-    features.append(domain.count('.') - 1)
-    features.append(1 if url.startswith("https") else 0)
-    suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq']
-    features.append(1 if any(domain.endswith(tld) for tld in suspicious_tlds) else 0)
-
-    for _ in range(31 - len(features)):
+    features = [
+        len(url),
+        url.count('.'),
+        url.count('@'),
+        url.count('?'),
+        url.count('-'),
+        url.count('='),
+        url.count('http'),
+        url.count('https'),
+        url.count('www'),
+        sum(c.isdigit() for c in url),
+        sum(c.isalpha() for c in url),
+        urlparse(url).path.count('/'),
+        url.count('//'),
+        url.count('%'),
+        url.count('.com'),
+        url.count('.exe'),
+        url.count('.php'),
+        1 if re.fullmatch(r'(\d{1,3}\.){3}\d{1,3}', urlparse(url).netloc) else 0,
+        len(urlparse(url).netloc),
+        urlparse(url).netloc.count('.') - 1,
+        1 if url.startswith("https") else 0,
+        1 if any(urlparse(url).netloc.endswith(tld) for tld in ['.tk', '.ml', '.ga', '.cf', '.gq']) else 0,
+    ]
+    while len(features) < 31:
         features.append(0)
-
     return features
 
-def is_valid_url(data: str) -> bool:
+def predict_url(features):
+    prediction = model.predict([features])
+    return prediction[0]
+
+def is_valid_url(url: str) -> bool:
     try:
-        result = urlparse(data)
-        return all([result.scheme in ['http', 'https'], result.netloc])
+        parsed = urlparse(url)
+        return all([parsed.scheme in ['http', 'https'], parsed.netloc])
     except:
         return False
 
-def predict_url(url_features):
-    prediction = model.predict([url_features])
-    return prediction[0]
-
 def scan_qr_code(image):
     detector = cv2.QRCodeDetector()
-    data, points, _ = detector.detectAndDecode(image)
+    data, _, _ = detector.detectAndDecode(image)
     return [data] if data else []
 
-# Initialize session state for scan history
+# Initialize state
 if "scan_history" not in st.session_state:
     st.session_state.scan_history = []
 
+# Title and Description
 st.title("Phishing URL and QR Code Scanner")
-st.markdown("### Upload a URL or QR code image to check if it's phishing or safe.")
+st.markdown("### Upload a URL or QR code image or scan live to check if it's phishing or safe.")
 
+# URL Input
 st.header("Predict Phishing URL")
 url_input = st.text_input("Enter URL:")
 if url_input:
-    url_features = extract_features(url_input)
-    prediction = predict_url(url_features)
+    features = extract_features(url_input)
+    prediction = predict_url(features)
     result = "SAFE" if prediction == 1 else "PHISHING"
-    if prediction == 1:
-        st.success("This URL is SAFE.")
-    else:
-        st.error("This URL is PHISHING.")
+    st.success("This URL is SAFE.") if prediction == 1 else st.error("This URL is PHISHING.")
     st.session_state.scan_history.append((url_input, result))
 
-st.header("Upload QR Code Image to Scan")
-qr_code_image = st.file_uploader("Upload QR code image", type=["png", "jpg", "jpeg"])
-if qr_code_image:
-    image = Image.open(qr_code_image).convert('RGB')
+# QR Image Upload
+st.header("Upload QR Code Image")
+qr_file = st.file_uploader("Upload QR image", type=["png", "jpg", "jpeg"])
+if qr_file:
+    image = Image.open(qr_file).convert('RGB')
     st.image(image, caption="Uploaded QR Code", use_container_width=True)
-
-    image_np = np.array(image)
-    image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
-
-    urls_in_qr = scan_qr_code(image_bgr)
-    if urls_in_qr:
-        for data in urls_in_qr:
-            st.write(f"QR Code Content: {data}")
+    np_image = np.array(image)
+    np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
+    qr_data = scan_qr_code(np_image)
+    if qr_data:
+        for data in qr_data:
+            st.write("QR Code Content:")
             st.code(data)
             st.download_button("Copy QR Content", data, file_name="qr_content.txt")
             if is_valid_url(data):
-                url_features = extract_features(data)
-                prediction = predict_url(url_features)
+                features = extract_features(data)
+                prediction = predict_url(features)
                 result = "SAFE" if prediction == 1 else "PHISHING"
-                if prediction == 1:
-                    st.success("This URL is SAFE.")
-                else:
-                    st.error("This URL is PHISHING.")
+                st.success("This URL is SAFE.") if prediction == 1 else st.error("This URL is PHISHING.")
                 st.session_state.scan_history.append((data, result))
             else:
                 st.warning("⚠️ This QR code does not contain a valid URL.")
     else:
         st.error("No QR code detected.")
 
-import streamlit.components.v1 as components
+# Live QR Code Scanner
+st.header("Live QR Code Scanner (Web-Compatible)")
 
-st.header("Live QR Code Scanner (Browser-Based)")
-
-qr_html_code = """
-<!DOCTYPE html>
-<html>
-  <body>
-    <div id="reader" width="600px"></div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-      function sendDataToStreamlit(data) {
-        const streamlitEvent = new Event("QRData");
-        streamlitEvent.data = data;
-        window.dispatchEvent(streamlitEvent);
-      }
-
-      const html5QrCode = new Html5Qrcode("reader");
-      html5QrCode.start(
-        { facingMode: "environment" }, 
-        {
-          fps: 10,
-          qrbox: 250
-        },
-        (decodedText, decodedResult) => {
-          sendDataToStreamlit(decodedText);
-          html5QrCode.stop(); // Stop scanning once a code is read
-        },
-        (errorMessage) => {
-          // ignore read errors
-        }
-      ).catch(err => {
-        console.error("Camera start failed:", err);
-      });
-
-      window.addEventListener("QRData", function(e) {
-        const data = e.data;
-        const streamlitInput = window.parent.document.querySelector('iframe').contentWindow;
-        streamlitInput.postMessage({ isStreamlitMessage: true, type: "streamlit:setComponentValue", data: data }, "*");
-      });
-    </script>
-  </body>
-</html>
+qr_scanner = """
+<div id="reader" style="width:100%"></div>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+const html5QrCode = new Html5Qrcode("reader");
+html5QrCode.start(
+  { facingMode: "environment" },
+  {
+    fps: 10,
+    qrbox: 250
+  },
+  (decodedText, decodedResult) => {
+    const streamlitInput = window.parent.document.querySelector('iframe').contentWindow;
+    streamlitInput.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", data: decodedText}, "*");
+    html5QrCode.stop();
+  },
+  (errorMessage) => {}
+).catch(err => {
+  console.error("Camera error:", err);
+});
+</script>
 """
 
-qr_result = components.html(qr_html_code, height=400)
+qr_result = components.html(qr_scanner, height=400)
 
-# Handle the received QR code data
-qr_data = st.experimental_get_query_params().get("qr_data", [None])[0]
+# Receive QR result
+if '_qr_result' not in st.session_state:
+    st.session_state._qr_result = ""
 
-if qr_data:
-    st.markdown(f"**Scanned QR Code Content:** `{qr_data}`")
-    st.code(qr_data)
-    st.download_button("Copy QR Content", qr_data, file_name="qr_content.txt")
-    if is_valid_url(qr_data):
-        url_features = extract_features(qr_data)
-        prediction = predict_url(url_features)
+qr_input = st.text_input("Scanned QR content will appear here:", st.session_state._qr_result, key="live_qr")
+
+if qr_input and qr_input != st.session_state._qr_result:
+    st.session_state._qr_result = qr_input
+    st.markdown(f"**Scanned QR Code Content:** `{qr_input}`")
+    st.code(qr_input)
+    st.download_button("Copy QR Content", qr_input, file_name="qr_content.txt")
+    if is_valid_url(qr_input):
+        features = extract_features(qr_input)
+        prediction = predict_url(features)
         result = "SAFE" if prediction == 1 else "PHISHING"
-        if prediction == 1:
-            st.success("✅ This URL is SAFE.")
-        else:
-            st.error("🚨 This URL is PHISHING.")
-        st.session_state.scan_history.append((qr_data, result))
+        st.success("✅ This URL is SAFE.") if prediction == 1 else st.error("🚨 This URL is PHISHING.")
+        st.session_state.scan_history.append((qr_input, result))
     else:
         st.warning("⚠️ This QR code does not contain a valid URL.")
 
-if st.session_state.last_qr_data and not st.session_state.scan_active:
-    st.markdown(f"**🔍 Last Decoded QR Code Content:** `{st.session_state.last_qr_data}`")
-
-# Scan History Table
+# History
 if st.session_state.scan_history:
     st.header("Scan History")
-    history_df = pd.DataFrame(st.session_state.scan_history, columns=["Content", "Prediction"])
-    st.dataframe(history_df, use_container_width=True)
+    df = pd.DataFrame(st.session_state.scan_history, columns=["Content", "Prediction"])
+    st.dataframe(df, use_container_width=True)
