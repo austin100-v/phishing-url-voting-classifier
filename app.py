@@ -12,7 +12,8 @@ import threading
 
 model = joblib.load('voting_classifier_model.pkl')
 
-import re from urllib.parse import urlparse
+import re
+from urllib.parse import urlparse
 
 def extract_features(url): features = []
 
