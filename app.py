@@ -2,19 +2,14 @@ import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from pyzbar.pyzbar import decode
-from PIL import Image
-import io
-import re
 from urllib.parse import urlparse
+import re
 
-# Load the pre-trained model
+# Load model
 model = joblib.load('voting_classifier_model.pkl')
 
 def extract_features(url):
     features = []
-
     features.append(len(url))
     features.append(url.count('.'))
     features.append(url.count('@'))
@@ -42,10 +37,8 @@ def extract_features(url):
     features.append(1 if url.startswith("https") else 0)
     suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq']
     features.append(1 if any(domain.endswith(tld) for tld in suspicious_tlds) else 0)
-
     for _ in range(31 - len(features)):
         features.append(0)
-
     return features
 
 def is_valid_url(data: str) -> bool:
@@ -59,62 +52,66 @@ def predict_url(url_features):
     prediction = model.predict([url_features])
     return prediction[0]
 
-# NEW: Use pyzbar for QR code detection
-def scan_qr_code(image_np):
-    decoded_objs = decode(image_np)
-    return [obj.data.decode('utf-8') for obj in decoded_objs if obj.data]
+# Streamlit UI
+st.title("Phishing URL and QR Code Scanner (with Live Camera)")
 
-# Initialize session state
-if "scan_history" not in st.session_state:
-    st.session_state.scan_history = []
-
-st.title("Phishing URL and QR Code Scanner")
-st.markdown("### Upload a URL or QR code image to check if it's phishing or safe.")
-
-# Manual URL Input
-st.header("Predict Phishing URL")
+st.header("Enter URL Manually")
 url_input = st.text_input("Enter URL:")
 if url_input:
-    url_features = extract_features(url_input)
-    prediction = predict_url(url_features)
-    result = "SAFE" if prediction == 1 else "PHISHING"
-    if prediction == 1:
+    features = extract_features(url_input)
+    pred = predict_url(features)
+    if pred == 1:
         st.success("This URL is SAFE.")
     else:
         st.error("This URL is PHISHING.")
-    st.session_state.scan_history.append((url_input, result))
 
-# QR Code Image Upload
-st.header("Upload QR Code Image to Scan")
-qr_code_image = st.file_uploader("Upload QR code image", type=["png", "jpg", "jpeg"])
-if qr_code_image:
-    image = Image.open(qr_code_image).convert('RGB')
-    st.image(image, caption="Uploaded QR Code", use_container_width=True)
+# Hidden input to receive scanned QR code data from JS
+qr_data = st.text_input("QR Code Data (hidden)", key="qr_data", value="", label_visibility="collapsed")
 
-    image_np = np.array(image)
-    urls_in_qr = scan_qr_code(image_np)
-    if urls_in_qr:
-        for data in urls_in_qr:
-            st.write(f"QR Code Content: {data}")
-            st.code(data)
-            st.download_button("Copy QR Content", data, file_name="qr_content.txt")
-            if is_valid_url(data):
-                url_features = extract_features(data)
-                prediction = predict_url(url_features)
-                result = "SAFE" if prediction == 1 else "PHISHING"
-                if prediction == 1:
-                    st.success("This URL is SAFE.")
-                else:
-                    st.error("This URL is PHISHING.")
-                st.session_state.scan_history.append((data, result))
-            else:
-                st.warning("⚠️ This QR code does not contain a valid URL.")
+if qr_data:
+    st.markdown(f"**Scanned QR Code Content:** `{qr_data}`")
+    if is_valid_url(qr_data):
+        features = extract_features(qr_data)
+        pred = predict_url(features)
+        if pred == 1:
+            st.success("✅ This URL is SAFE.")
+        else:
+            st.error("🚨 This URL is PHISHING.")
     else:
-        st.error("No QR code detected. Try another image or use a clearer code.")
+        st.warning("⚠️ This QR code does not contain a valid URL.")
 
-# Scan History
-if st.session_state.scan_history:
-    st.header("Scan History")
-    history_df = pd.DataFrame(st.session_state.scan_history, columns=["Content", "Prediction"])
-    st.dataframe(history_df, use_container_width=True)
-    
+# Inject html5-qrcode for live scanning
+st.header("Live QR Code Scanner")
+
+# JavaScript and HTML for live camera scan via html5-qrcode
+# When QR detected, JS sets the hidden input value so Streamlit can react
+st.components.v1.html("""
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+  <div id="reader" style="width: 300px;"></div>
+  <script>
+    function sendToStreamlit(data) {
+      const inputBox = window.parent.document.querySelector('input[data-baseweb="true"][aria-label="QR Code Data (hidden)"]');
+      if (inputBox) {
+        inputBox.value = data;
+        inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    let lastResult = null;
+    function onScanSuccess(decodedText, decodedResult) {
+      if (decodedText !== lastResult) {
+        lastResult = decodedText;
+        sendToStreamlit(decodedText);
+      }
+    }
+    var html5QrcodeScanner = new Html5QrcodeScanner(
+      "reader", { fps: 10, qrbox: 250 });
+    html5QrcodeScanner.render(onScanSuccess);
+  </script>
+</body>
+</html>
+""", height=400)
