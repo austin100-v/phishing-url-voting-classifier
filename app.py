@@ -108,13 +108,32 @@ with col2:
         st.session_state.scanning = False
 
 # Live QR Code Scanner section
-if st.session_state.scanning:
-    qr_data_live = st.text_input("QR Code Data (hidden)", key="qr_live_data", value="", label_visibility="collapsed")
+st.header("Live QR Code Scanner")
 
-    if qr_data_live:
-        st.markdown(f"**Scanned QR Code Content (Live):** `{qr_data_live}`")
-        if is_valid_url(qr_data_live):
-            features = extract_features(qr_data_live)
+# Setup session state for control
+if 'scanning' not in st.session_state:
+    st.session_state.scanning = False
+if 'live_qr_data' not in st.session_state:
+    st.session_state.live_qr_data = ""
+if 'scanned' not in st.session_state:
+    st.session_state.scanned = False
+
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Start Scan"):
+        st.session_state.scanning = True
+        st.session_state.scanned = False
+with col2:
+    if st.button("Stop Scan"):
+        st.session_state.scanning = False
+
+# Handle scanned data
+def handle_scanned_data():
+    qr_data = st.session_state.live_qr_data
+    if qr_data:
+        st.markdown(f"**Scanned QR Code Content (Live):** `{qr_data}`")
+        if is_valid_url(qr_data):
+            features = extract_features(qr_data)
             pred = predict_url(features)
             if pred == 1:
                 st.success("✅ This URL is SAFE.")
@@ -123,46 +142,28 @@ if st.session_state.scanning:
         else:
             st.warning("⚠️ This QR code does not contain a valid URL.")
 
-    # Pass scanning state to JS
+# Display QR scanner
+if st.session_state.scanning:
+    st.text_input("QR Code Data (hidden)", key="live_qr_data", label_visibility="collapsed", on_change=lambda: st.session_state.update(scanned=True))
     st.components.v1.html(f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-      <style>
-        #reader {{ margin-bottom: 10px; }}
-      </style>
-    </head>
-    <body>
-      <div id="reader" style="width: 300px;"></div>
-      <script>
-        const scanningEnabled = {str(st.session_state.scanning).lower()};
-        let lastResult = null;
-        let scanner;
-
-        function sendToStreamlit(data) {{
-          const inputBox = window.parent.document.querySelector('input[aria-label="QR Code Data (hidden)"]');
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <div id="reader" style="width: 300px;"></div>
+    <script>
+      let lastResult = null;
+      let scanner = new Html5QrcodeScanner("reader", {{ fps: 10, qrbox: 250 }});
+      scanner.render(function(decodedText, decodedResult) {{
+        if (decodedText !== lastResult) {{
+          lastResult = decodedText;
+          const inputBox = window.parent.document.querySelector('input[data-baseweb="input"]');
           if (inputBox) {{
-            inputBox.value = data;
+            inputBox.value = decodedText;
             inputBox.dispatchEvent(new Event('input', {{ bubbles: true }}));
           }}
         }}
-
-        function onScanSuccess(decodedText, decodedResult) {{
-          if (decodedText !== lastResult) {{
-            lastResult = decodedText;
-            sendToStreamlit(decodedText);
-          }}
-        }}
-
-        if (scanningEnabled) {{
-          scanner = new Html5QrcodeScanner("reader", {{ fps: 10, qrbox: 250 }});
-          scanner.render(onScanSuccess);
-        }} else {{
-          document.getElementById("reader").innerHTML = "Scanner stopped.";
-        }}
-      </script>
-    </body>
-    </html>
+      }});
+    </script>
     """, height=450)
 
+# Show scan result if available
+if st.session_state.scanned:
+    handle_scanned_data()
