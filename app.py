@@ -75,7 +75,7 @@ st.header("Upload QR Code Image")
 qr_image_file = st.file_uploader("Upload QR code image", type=['png', 'jpg', 'jpeg'])
 if qr_image_file:
     image = Image.open(qr_image_file).convert('RGB')
-    st.image(image, caption="Uploaded QR Code Image", use_column_width=True)
+    st.image(image, caption="Uploaded QR Code", use_container_width=True)
     image_np = np.array(image)
     image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
     qr_data = scan_qr_code(image_bgr)
