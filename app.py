@@ -94,57 +94,30 @@ if qr_image_file:
     else:
         st.error("No QR code detected in the uploaded image.")
 
-# Flags to control scan state
-if 'scanning' not in st.session_state:
-    st.session_state.scanning = False
-
-# Start and Stop buttons
-col1, col2 = st.columns([1, 1])
-with col1:
-    if st.button("Start Scan"):
-        st.session_state.scanning = True
-with col2:
-    if st.button("Stop Scan"):
-        st.session_state.scanning = False
-
-# Live QR Code Scanner section
+# ----------------- LIVE SCAN SECTION -----------------
 st.header("Live QR Code Scanner")
 
-# Setup session state for control
-if 'scanning' not in st.session_state:
+# Session state flags
+if "scanning" not in st.session_state:
     st.session_state.scanning = False
-if 'live_qr_data' not in st.session_state:
-    st.session_state.live_qr_data = ""
-if 'scanned' not in st.session_state:
+if "scanned" not in st.session_state:
     st.session_state.scanned = False
+if "live_qr_data" not in st.session_state:
+    st.session_state.live_qr_data = ""
 
+# Start/Stop Scan Buttons
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Start Scan"):
+    if st.button("Start Scan", key="live_start"):
         st.session_state.scanning = True
         st.session_state.scanned = False
 with col2:
-    if st.button("Stop Scan"):
+    if st.button("Stop Scan", key="live_stop"):
         st.session_state.scanning = False
 
-# Handle scanned data
-def handle_scanned_data():
-    qr_data = st.session_state.live_qr_data
-    if qr_data:
-        st.markdown(f"**Scanned QR Code Content (Live):** `{qr_data}`")
-        if is_valid_url(qr_data):
-            features = extract_features(qr_data)
-            pred = predict_url(features)
-            if pred == 1:
-                st.success("✅ This URL is SAFE.")
-            else:
-                st.error("🚨 This URL is PHISHING.")
-        else:
-            st.warning("⚠️ This QR code does not contain a valid URL.")
-
-# Display QR scanner
+# QR Scanner HTML
 if st.session_state.scanning:
-    st.text_input("QR Code Data (hidden)", key="live_qr_data", label_visibility="collapsed", on_change=lambda: st.session_state.update(scanned=True))
+    st.text_input("QR Code Data", key="live_qr_data", label_visibility="collapsed", on_change=lambda: st.session_state.update({"scanned": True}))
     st.components.v1.html(f"""
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <div id="reader" style="width: 300px;"></div>
@@ -164,6 +137,20 @@ if st.session_state.scanning:
     </script>
     """, height=450)
 
-# Show scan result if available
+# Show scan result
+def handle_scanned_data():
+    qr_data = st.session_state.live_qr_data
+    if qr_data:
+        st.markdown(f"**Scanned QR Code Content (Live):** `{qr_data}`")
+        if is_valid_url(qr_data):
+            features = extract_features(qr_data)
+            pred = predict_url(features)
+            if pred == 1:
+                st.success("✅ This URL is SAFE.")
+            else:
+                st.error("🚨 This URL is PHISHING.")
+        else:
+            st.warning("⚠️ This QR code does not contain a valid URL.")
+
 if st.session_state.scanned:
     handle_scanned_data()
