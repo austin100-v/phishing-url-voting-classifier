@@ -8,10 +8,10 @@ from urllib.parse import urlparse
 import re
 import streamlit.components.v1 as components
 
-# Load model
+# Load your trained model
 model = joblib.load('voting_classifier_model.pkl')
 
-# Extract features from URL
+# Helper functions
 def extract_features(url):
     features = [
         len(url),
@@ -42,13 +42,12 @@ def extract_features(url):
     return features
 
 def predict_url(features):
-    prediction = model.predict([features])
-    return prediction[0]
+    return model.predict([features])[0]
 
 def is_valid_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
-        return all([parsed.scheme in ['http', 'https'], parsed.netloc])
+        return parsed.scheme in ['http', 'https'] and bool(parsed.netloc)
     except:
         return False
 
@@ -57,33 +56,32 @@ def scan_qr_code(image):
     data, _, _ = detector.detectAndDecode(image)
     return [data] if data else []
 
-# Initialize state
+# Session state
 if "scan_history" not in st.session_state:
     st.session_state.scan_history = []
 
-# Title and Description
+# Page layout
 st.title("Phishing URL and QR Code Scanner")
-st.markdown("### Upload a URL or QR code image or scan live to check if it's phishing or safe.")
+st.markdown("### Upload a URL, QR image or scan live to detect phishing threats.")
 
-# URL Input
+# --- URL Input ---
 st.header("Predict Phishing URL")
 url_input = st.text_input("Enter URL:")
 if url_input:
     features = extract_features(url_input)
-    prediction = predict_url(features)
-    result = "SAFE" if prediction == 1 else "PHISHING"
-    st.success("This URL is SAFE.") if prediction == 1 else st.error("This URL is PHISHING.")
+    result = "SAFE" if predict_url(features) == 1 else "PHISHING"
+    st.success("This URL is SAFE.") if result == "SAFE" else st.error("This URL is PHISHING.")
     st.session_state.scan_history.append((url_input, result))
 
-# QR Image Upload
+# --- QR Image Upload ---
 st.header("Upload QR Code Image")
 qr_file = st.file_uploader("Upload QR image", type=["png", "jpg", "jpeg"])
 if qr_file:
     image = Image.open(qr_file).convert('RGB')
     st.image(image, caption="Uploaded QR Code", use_container_width=True)
-    np_image = np.array(image)
-    np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
-    qr_data = scan_qr_code(np_image)
+    image_np = np.array(image)
+    image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+    qr_data = scan_qr_code(image_bgr)
     if qr_data:
         for data in qr_data:
             st.write("QR Code Content:")
@@ -91,17 +89,16 @@ if qr_file:
             st.download_button("Copy QR Content", data, file_name="qr_content.txt")
             if is_valid_url(data):
                 features = extract_features(data)
-                prediction = predict_url(features)
-                result = "SAFE" if prediction == 1 else "PHISHING"
-                st.success("This URL is SAFE.") if prediction == 1 else st.error("This URL is PHISHING.")
+                result = "SAFE" if predict_url(features) == 1 else "PHISHING"
+                st.success("This URL is SAFE.") if result == "SAFE" else st.error("This URL is PHISHING.")
                 st.session_state.scan_history.append((data, result))
             else:
                 st.warning("⚠️ This QR code does not contain a valid URL.")
     else:
         st.error("No QR code detected.")
 
-# Live QR Code Scanner
-st.header("Live QR Code Scanner (Web-Compatible)")
+# --- Live QR Scanner (Web-Compatible) ---
+st.header("Live QR Code Scanner (Browser Camera)")
 
 qr_scanner = """
 <div id="reader" style="width:100%"></div>
@@ -115,8 +112,8 @@ html5QrCode.start(
     qrbox: 250
   },
   (decodedText, decodedResult) => {
-    const streamlitInput = window.parent.document.querySelector('iframe').contentWindow;
-    streamlitInput.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", data: decodedText}, "*");
+    const inputBox = window.parent.document.querySelector('iframe').contentWindow;
+    inputBox.postMessage({isStreamlitMessage: true, type: "streamlit:setComponentValue", data: decodedText}, "*");
     html5QrCode.stop();
   },
   (errorMessage) => {}
@@ -126,10 +123,10 @@ html5QrCode.start(
 </script>
 """
 
-qr_result = components.html(qr_scanner, height=400)
+components.html(qr_scanner, height=400)
 
-# Receive QR result
-if '_qr_result' not in st.session_state:
+# Receive scanned data
+if "_qr_result" not in st.session_state:
     st.session_state._qr_result = ""
 
 qr_input = st.text_input("Scanned QR content will appear here:", st.session_state._qr_result, key="live_qr")
@@ -141,15 +138,15 @@ if qr_input and qr_input != st.session_state._qr_result:
     st.download_button("Copy QR Content", qr_input, file_name="qr_content.txt")
     if is_valid_url(qr_input):
         features = extract_features(qr_input)
-        prediction = predict_url(features)
-        result = "SAFE" if prediction == 1 else "PHISHING"
-        st.success("✅ This URL is SAFE.") if prediction == 1 else st.error("🚨 This URL is PHISHING.")
+        result = "SAFE" if predict_url(features) == 1 else "PHISHING"
+        st.success("✅ This URL is SAFE.") if result == "SAFE" else st.error("🚨 This URL is PHISHING.")
         st.session_state.scan_history.append((qr_input, result))
     else:
         st.warning("⚠️ This QR code does not contain a valid URL.")
 
-# History
+# --- Scan History ---
 if st.session_state.scan_history:
     st.header("Scan History")
-    df = pd.DataFrame(st.session_state.scan_history, columns=["Content", "Prediction"])
-    st.dataframe(df, use_container_width=True)
+    history_df = pd.DataFrame(st.session_state.scan_history, columns=["Content", "Prediction"])
+    st.dataframe(history_df, use_container_width=True)
+    
